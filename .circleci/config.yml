@@ -3,7 +3,7 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1.13
-    working_directory: /go/src/github.com/marcinwyszynski/kmsjwt
+    working_directory: /go/src/github.com/spacelift-io/kmsjwt
     steps:
       - checkout
 
