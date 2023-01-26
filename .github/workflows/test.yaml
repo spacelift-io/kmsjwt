@@ -1,0 +1,14 @@
+name: Unit testing
+
+on: { push: { branches-ignore: [production, main] } }
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    container: golang:1.19
+
+    steps:
+      - uses: actions/checkout@v3
+      - run: go mod download
+      - run: go test -race ./...
