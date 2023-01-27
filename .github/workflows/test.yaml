@@ -1,6 +1,6 @@
 name: Unit testing
 
-on: { push: { branches-ignore: [production, main] } }
+on: [push]
 
 jobs:
   test:
