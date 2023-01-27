@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/base64"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -18,30 +19,22 @@ var signingMethod = jwt.SigningMethodRS512
 // key stored in AWS KMS. The public key is retrieved from KMS on
 // initialization.
 type KMSJWT struct {
-	api       KMS
-	keyID     string
+	api   KMS
+	keyID string
+
+	lock      sync.Mutex
 	publicKey *rsa.PublicKey
 }
 
 // New provides a KMS-based implementation of JWT signing method.
-func New(ctx context.Context, api KMS, keyID string) (*KMSJWT, error) {
-	out, err := api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(keyID)})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not retrieve public key")
-	}
-
-	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(out.PublicKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not parse public key")
-	}
-
-	return &KMSJWT{api, keyID, publicKey}, nil
+func New(api KMS, keyID string) *KMSJWT {
+	return &KMSJWT{api: api, keyID: keyID}
 }
 
 // NewWithPublicKey provides a KMS-based implementation of JWT signing method
 // with a pre-loaded public key.
 func NewWithPublicKey(api KMS, keyID string, publicKey *rsa.PublicKey) *KMSJWT {
-	return &KMSJWT{api, keyID, publicKey}
+	return &KMSJWT{api: api, keyID: keyID, publicKey: publicKey}
 }
 
 func (k *KMSJWT) Alg() string {
@@ -73,6 +66,39 @@ func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
 }
 
-func (k *KMSJWT) Verify(signingString, stringSignature string, _ interface{}) error {
-	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
+func (k *KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
+	ctx, ok := key.(context.Context)
+	if !ok {
+		return jwt.ErrInvalidKeyType
+	}
+
+	publicKey, err := k.getPublicKey(ctx)
+	if err != nil {
+		return err
+	}
+
+	return signingMethod.Verify(signingString, stringSignature, publicKey)
+}
+
+func (k *KMSJWT) getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+
+	if k.publicKey != nil {
+		return k.publicKey, nil
+	}
+
+	out, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(k.keyID)})
+	if err != nil {
+		return nil, errors.Wrap(err, "could not retrieve public key")
+	}
+
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(out.PublicKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse public key")
+	}
+
+	k.publicKey = publicKey
+
+	return publicKey, nil
 }
