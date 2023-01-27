@@ -12,6 +12,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var signingMethod = jwt.SigningMethodRS512
+
 // KMSJWT is a JWT signing method implementation using RSA512 with the private
 // key stored in AWS KMS. The public key is retrieved from KMS on
 // initialization.
@@ -43,7 +45,7 @@ func NewWithPublicKey(api KMS, keyID string, publicKey *rsa.PublicKey) *KMSJWT {
 }
 
 func (k *KMSJWT) Alg() string {
-	return jwt.SigningMethodRS512.Alg()
+	return signingMethod.Alg()
 }
 
 func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
@@ -52,7 +54,7 @@ func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 		return "", jwt.ErrInvalidKeyType
 	}
 
-	hash := jwt.SigningMethodPS512.Hash.New()
+	hash := signingMethod.Hash.New()
 	hash.Write([]byte(signingString))
 
 	out, err := k.api.Sign(ctx, &kms.SignInput{
@@ -72,5 +74,5 @@ func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 }
 
 func (k *KMSJWT) Verify(signingString, stringSignature string, _ interface{}) error {
-	return jwt.SigningMethodRS512.Verify(signingString, stringSignature, k.publicKey)
+	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
 }
