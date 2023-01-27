@@ -38,7 +38,6 @@ func TestKMSJWT(t *testing.T) {
 		g.BeforeEach(func() {
 			api = &internal.MockKMS{}
 			ctx = context.Background()
-			err = nil
 		})
 
 		g.Describe("constructor function", func() {
@@ -104,9 +103,13 @@ func TestKMSJWT(t *testing.T) {
 		g.Describe("initialized instance", func() {
 			const signingString = "bacon"
 
+			var expectedSignature string
+			var signature string
 			var publicKey *rsa.PublicKey
 
 			g.BeforeEach(func() {
+				signature = ""
+
 				key, err := os.ReadFile("testdata/rsa.public")
 				require.NoError(t, err)
 
@@ -114,6 +117,15 @@ func TestKMSJWT(t *testing.T) {
 				require.NoError(t, err)
 
 				sut = kmsjwt.NewWithPublicKey(api, kmsKeyID, publicKey)
+
+				data, err := os.ReadFile("testdata/rsa.private")
+				require.NoError(t, err)
+
+				privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(data)
+				require.NoError(t, err)
+
+				expectedSignature, err = jwt.SigningMethodRS512.Sign(signingString, privateKey)
+				require.NoError(t, err)
 			})
 
 			g.Describe("Alg", func() {
@@ -125,7 +137,6 @@ func TestKMSJWT(t *testing.T) {
 			g.Describe("Sign", func() {
 				var apiCall *mock.Call
 				var input *kms.SignInput
-				var signature string
 
 				g.BeforeEach(func() {
 					input = nil
@@ -165,11 +176,23 @@ func TestKMSJWT(t *testing.T) {
 						})
 					})
 				})
+
+				g.Describe("when the API call succeeds", func() {
+					g.BeforeEach(func() {
+						sigBytes, err := base64.RawURLEncoding.DecodeString(expectedSignature)
+						require.NoError(t, err)
+
+						apiCall.Return(&kms.SignOutput{Signature: sigBytes}, nil)
+					})
+
+					g.It("returns the signature", func() {
+						Expect(err).To(Succeed())
+						Expect(signature).To(Equal(expectedSignature))
+					})
+				})
 			})
 
 			g.Describe("Verify", func() {
-				var signature string
-
 				g.JustBeforeEach(func() { err = sut.Verify(signingString, signature, publicKey) })
 
 				g.Describe("with invalid signature", func() {
@@ -181,16 +204,7 @@ func TestKMSJWT(t *testing.T) {
 				})
 
 				g.Describe("with a valid signature", func() {
-					g.BeforeEach(func() {
-						data, err := os.ReadFile("testdata/rsa.private")
-						require.NoError(t, err)
-
-						privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(data)
-						require.NoError(t, err)
-
-						signature, err = jwt.SigningMethodRS512.Sign(signingString, privateKey)
-						require.NoError(t, err)
-					})
+					g.BeforeEach(func() { signature = expectedSignature })
 
 					g.It("should succeed", func() { Expect(err).To(Succeed()) })
 				})
