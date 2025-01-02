@@ -6,7 +6,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    container: golang:1.19
+    container: golang:1.23
 
     steps:
       - uses: actions/checkout@v3
@@ -20,6 +20,6 @@ jobs:
             exit 1
           fi
 
-      - uses: golangci/golangci-lint-action@v3
+      - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.50
+          version: v1.63
