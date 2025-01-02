@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Mark source directory as safe
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
       - name: go.mod check
         run: |
           go mod tidy
