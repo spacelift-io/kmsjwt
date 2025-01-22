@@ -17,7 +17,7 @@ import (
 	"github.com/spacelift-io/kmsjwt/v7"
 )
 
-func TestWithLocalStack(t *testing.T) {
+func TestSignAndVerifyWithLocalStack(t *testing.T) {
 	const in = "sign me, please"
 	ctx := context.Background()
 	client := newClient(t, ctx)
@@ -98,4 +98,11 @@ func (c Client) GetPublicKey(t *testing.T, ctx context.Context, id string) *rsa.
 	require.NoError(t, err, "parsing fetched pubic key")
 
 	return key.(*rsa.PublicKey)
+}
+
+func TestAlg(t *testing.T) {
+	// Valid values: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
+	const want = "RS512"
+	signer := kmsjwt.New(nil, "")
+	assert.Equal(t, want, signer.Alg(), "algorithm changed, that's MAJOR change")
 }

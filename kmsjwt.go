@@ -89,7 +89,7 @@ func (k *KMSJWT) getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
 		return k.publicKey, nil
 	}
 
-	response, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(k.keyID)})
+	response, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &k.keyID})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve public key")
 	}
