@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,6 +41,19 @@ func TestWithLocalStack(t *testing.T) {
 		require.NoError(t, err, "sign")
 
 		err = signer.Verify(in, signature, ctx)
+		assert.NoError(t, err, "verify")
+	})
+
+	t.Run("RFC compliance", func(t *testing.T) {
+		signer := kmsjwt.New(client.KMS, keyID)
+
+		signature, err := signer.Sign(in, ctx)
+		require.NoError(t, err, "sign")
+
+		builtinSigner := jwt.GetSigningMethod(signer.Alg())
+		require.NotNil(t, builtinSigner, "unknown algorithm")
+
+		err = builtinSigner.Verify(in, signature, publicKey)
 		assert.NoError(t, err, "verify")
 	})
 }
