@@ -16,4 +16,6 @@ jobs:
         uses: LocalStack/setup-localstack@v0.2.3
         with:
           image-tag: '4.0.3'
+        env:
+          LOCALSTACK_CI_PROJECT: "${{ env.CI_PROJECT }}"
       - run: go test -race ./...
