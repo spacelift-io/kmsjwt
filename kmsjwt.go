@@ -3,6 +3,7 @@ package kmsjwt
 import (
 	"context"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"sync"
 
@@ -88,17 +89,21 @@ func (k *KMSJWT) getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
 		return k.publicKey, nil
 	}
 
-	out, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(k.keyID)})
+	response, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(k.keyID)})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve public key")
 	}
 
-	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(out.PublicKey)
+	publicKey, err := x509.ParsePKIXPublicKey(response.PublicKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse public key")
 	}
 
-	k.publicKey = publicKey
+	var ok bool
+	k.publicKey, ok = publicKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.Errorf("public key type assertion: cannot assert %T as %T", publicKey, k.publicKey)
+	}
 
-	return publicKey, nil
+	return k.publicKey, nil
 }

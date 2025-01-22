@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"os"
 	"testing"
@@ -124,10 +125,16 @@ func TestKMSJWT(t *testing.T) {
 			var publicKey *rsa.PublicKey
 
 			g.BeforeEach(func() {
-				publicKeyBytes, err = os.ReadFile("testdata/rsa.public")
+				var pemEncodedBytes []byte
+				pemEncodedBytes, err = os.ReadFile("testdata/rsa.public")
 				require.NoError(t, err)
 
-				publicKey, err = jwt.ParseRSAPublicKeyFromPEM(publicKeyBytes)
+				// KMS API returns DER encoded bytes.
+				var decoded *pem.Block
+				decoded, _ = pem.Decode(pemEncodedBytes)
+				publicKeyBytes = decoded.Bytes
+
+				publicKey, err = jwt.ParseRSAPublicKeyFromPEM(pemEncodedBytes)
 				require.NoError(t, err)
 
 				signature = expectedSignature
@@ -158,7 +165,7 @@ func TestKMSJWT(t *testing.T) {
 					})
 
 					g.It("returns an error", func() {
-						Expect(err).To(MatchError("could not parse public key: invalid key: Key must be a PEM encoded PKCS1 or PKCS8 key"))
+						Expect(err).To(MatchError(ContainSubstring("could not parse public key")))
 					})
 				})
 
