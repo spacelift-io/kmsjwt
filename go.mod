@@ -1,13 +1,6 @@
-module github.com/spacelift-io/kmsjwt/v6
+module github.com/spacelift-io/kmsjwt/v7
 
 go 1.23
-
-// All these versions asssumed the wrong key format returned by kms.GetPublicKey
-retract (
-	v6.2.0
-	v6.1.0
-	v6.0.0
-)
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.32.7

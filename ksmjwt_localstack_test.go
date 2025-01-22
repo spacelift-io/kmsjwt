@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/spacelift-io/kmsjwt/v6"
+	"github.com/spacelift-io/kmsjwt/v7"
 )
 
 func TestWithLocalStack(t *testing.T) {

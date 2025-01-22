@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/spacelift-io/kmsjwt/v6"
-	"github.com/spacelift-io/kmsjwt/v6/internal"
+	"github.com/spacelift-io/kmsjwt/v7"
+	"github.com/spacelift-io/kmsjwt/v7/internal"
 )
 
 func TestKMSJWT(t *testing.T) {
