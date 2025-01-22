@@ -58,10 +58,10 @@ func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha512,
 	})
 
-	if err != nil && errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) {
 		return "", err
 	} else if err != nil {
-		return "", jwt.ErrInvalidKey
+		return "", errors.Wrap(err, "signing with KMS")
 	}
 
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
