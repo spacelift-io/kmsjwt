@@ -2,8 +2,11 @@ package kmsjwt_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -92,9 +95,103 @@ func (c Client) GetPublicKey(t *testing.T, ctx context.Context, id string) *rsa.
 	return key.(*rsa.PublicKey)
 }
 
-func TestAlg(t *testing.T) {
+func TestNew(t *testing.T) {
+	const keyID = "dummy"
+
+	t.Run("happy", func(t *testing.T) {
+		_, _ = newSignerAndStub(t)
+	})
+
+	t.Run("error preserved in chain from KMS", func(t *testing.T) {
+		ctx := context.Background()
+		want := errors.New("something went wrong")
+
+		_, err := kmsjwt.New(ctx, KMSStub{Err: want}, keyID)
+		assert.ErrorIs(t, err, want)
+	})
+
+	t.Run("wrong key type", func(t *testing.T) {
+		ctx := context.Background()
+		publicKey := encodedED25519PublicKey(t)
+
+		_, err := kmsjwt.New(ctx, KMSStub{PublicKey: publicKey}, keyID)
+		assert.ErrorContains(t, err, "cannot assert")
+	})
+
+	t.Run("key not parsable", func(t *testing.T) {
+		ctx := context.Background()
+		publicKey := []byte("something unexpected")
+
+		_, err := kmsjwt.New(ctx, KMSStub{PublicKey: publicKey}, keyID)
+		assert.ErrorContains(t, err, "could not parse")
+	})
+}
+
+func newSignerAndStub(t *testing.T) (*kmsjwt.KMSJWT, *KMSStub) {
+	t.Helper()
+	const keyID = "dummy"
+	ctx := context.Background()
+	stub := &KMSStub{PublicKey: encodedRSAPublicKey(t)}
+	signer, err := kmsjwt.New(ctx, stub, keyID)
+	require.NoError(t, err, "creating signer")
+	return signer, stub
+}
+
+func encodedRSAPublicKey(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err, "generating RSA key")
+	return encode(t, &key.PublicKey)
+}
+
+func encode(t *testing.T, publicKey any) []byte {
+	t.Helper()
+	encoded, err := x509.MarshalPKIXPublicKey(publicKey)
+	require.NoError(t, err, "encoding public key")
+	return encoded
+}
+
+func encodedED25519PublicKey(t *testing.T) []byte {
+	t.Helper()
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err, "generating ed25519 key")
+	return encode(t, publicKey)
+}
+
+func TestKMSJWT_Alg(t *testing.T) {
 	// Valid values: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
 	const want = "PS512"
-	got := kmsjwt.KMSJWT{}.Alg()
-	assert.Equal(t, want, got, "algorithm changed, that's MAJOR change")
+	signer, _ := newSignerAndStub(t)
+	assert.Equal(t, want, signer.Alg(), "algorithm changed, that's MAJOR change")
+}
+
+func TestKMSJWT_Sign(t *testing.T) {
+	const signMe = "sign me, please"
+
+	t.Run("invalid key type", func(t *testing.T) {
+		signer, _ := newSignerAndStub(t)
+
+		_, err := signer.Sign(signMe, "foo")
+		assert.ErrorIs(t, err, jwt.ErrInvalidKeyType)
+	})
+
+	t.Run("error preserved in chain", func(t *testing.T) {
+		ctx := context.Background()
+		signer, stub := newSignerAndStub(t)
+		stub.Err = errors.New("something went wrong")
+
+		_, err := signer.Sign(signMe, ctx)
+		assert.ErrorIs(t, err, stub.Err)
+	})
+}
+
+func TestKMSJWT_Verify(t *testing.T) {
+	const signMe = "sign me, please"
+
+	t.Run("invalid key type", func(t *testing.T) {
+		signer, _ := newSignerAndStub(t)
+
+		err := signer.Verify(signMe, "invalid signature", "foo")
+		assert.ErrorIs(t, err, jwt.ErrInvalidKeyType)
+	})
 }
