@@ -31,6 +31,9 @@ type KMSJWT struct {
 // New retrieves the public key from KMS and returns a signer.
 func New(ctx context.Context, client KMS, keyID string) (*KMSJWT, error) {
 	publicKey, err := getPublicKey(ctx, client, keyID)
+	if err != nil {
+		return nil, fmt.Errorf("kmsjwt new: %w", err)
+	}
 	return &KMSJWT{client: client, keyID: keyID, publicKey: publicKey}, err
 }
 
@@ -63,7 +66,7 @@ func (k KMSJWT) Alg() string {
 func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
 	if !ok {
-		return "", fmt.Errorf("sign: %w", jwt.ErrInvalidKeyType)
+		return "", fmt.Errorf("kmsjwt sign: %w", jwt.ErrInvalidKeyType)
 	}
 
 	hash := signingMethod.Hash.New()
@@ -76,7 +79,7 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPssSha512,
 	})
 	if err != nil {
-		return "", fmt.Errorf("signing with KMS: %w", err)
+		return "", fmt.Errorf("kmsjwt signing with KMS: %w", err)
 	}
 
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
@@ -91,7 +94,7 @@ func (k KMSJWT) Verify(signingString, stringSignature string, key interface{}) e
 	// - It can be reintroduced later if needed without breaking the interface.
 	_, ok := key.(context.Context)
 	if !ok {
-		return fmt.Errorf("verify: %w", jwt.ErrInvalidKeyType)
+		return fmt.Errorf("kmsjwt verify: %w", jwt.ErrInvalidKeyType)
 	}
 
 	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
