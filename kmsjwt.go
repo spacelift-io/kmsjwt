@@ -53,10 +53,13 @@ func getPublicKey(ctx context.Context, client KMS, keyID string) (*rsa.PublicKey
 	return result, nil
 }
 
+// Alg returns the signing algorithm as defined in https://datatracker.ietf.org/doc/html/rfc7518#section-3.1.
 func (k KMSJWT) Alg() string {
 	return signingMethod.Alg()
 }
 
+// Sign signs the signingString with AWS KMS using the key ID stored on the object.
+// The key parameter expects a context.Context that is used for the network call to KMS.
 func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
 	if !ok {
@@ -82,6 +85,9 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
 }
 
+// Verify verifies that the signature is valid for the signingString.
+// The verification is done on the client side using the rsa.PublicKey stored on the object.
+// For the key parameter a context.Context is expected.
 func (k KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
 	// We don't use context, but let's keep it so:
 	// - The interface remains symmetric with Sign.
