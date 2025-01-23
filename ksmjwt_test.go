@@ -127,7 +127,7 @@ func TestNew(t *testing.T) {
 	})
 }
 
-func newSignerAndStub(t *testing.T) (*kmsjwt.KMSJWT, *KMSStub) {
+func newSignerAndStub(t *testing.T) (kmsjwt.KMSJWT, *KMSStub) {
 	t.Helper()
 	const keyID = "dummy"
 	ctx := context.Background()

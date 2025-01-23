@@ -29,12 +29,12 @@ type KMSJWT struct {
 }
 
 // New retrieves the public key from KMS and returns a signer.
-func New(ctx context.Context, client KMS, keyID string) (*KMSJWT, error) {
+func New(ctx context.Context, client KMS, keyID string) (KMSJWT, error) {
 	publicKey, err := getPublicKey(ctx, client, keyID)
 	if err != nil {
-		return nil, fmt.Errorf("kmsjwt new: %w", err)
+		return KMSJWT{}, fmt.Errorf("kmsjwt new: %w", err)
 	}
-	return &KMSJWT{client: client, keyID: keyID, publicKey: publicKey}, err
+	return KMSJWT{client: client, keyID: keyID, publicKey: publicKey}, err
 }
 
 func getPublicKey(ctx context.Context, client KMS, keyID string) (*rsa.PublicKey, error) {
