@@ -2,6 +2,8 @@ package kmsjwt_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"testing"
@@ -10,55 +12,45 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/spacelift-io/kmsjwt/v6"
 )
 
-func TestWithLocalStack(t *testing.T) {
-	const in = "sign me, please"
-	ctx := context.Background()
-	client := newClient(t, ctx)
-	keyID := client.CreateKey(t, ctx)
-	publicKey := client.GetPublicKey(t, ctx, keyID)
-
-	t.Run("new", func(t *testing.T) {
-		signer := kmsjwt.New(client.KMS, keyID)
-
-		signature, err := signer.Sign(in, ctx)
-		require.NoError(t, err, "sign")
-
-		err = signer.Verify(in, signature, ctx)
-		assert.NoError(t, err, "verify")
-	})
-
-	t.Run("new with public key", func(t *testing.T) {
-		signer := kmsjwt.NewWithPublicKey(client.KMS, keyID, publicKey)
-
-		signature, err := signer.Sign(in, ctx)
-		require.NoError(t, err, "sign")
-
-		err = signer.Verify(in, signature, ctx)
-		assert.NoError(t, err, "verify")
-	})
-
-	t.Run("RFC compliance", func(t *testing.T) {
-		signer := kmsjwt.New(client.KMS, keyID)
-
-		signature, err := signer.Sign(in, ctx)
-		require.NoError(t, err, "sign")
-
-		builtinSigner := jwt.GetSigningMethod(signer.Alg())
-		require.NotNil(t, builtinSigner, "unknown algorithm")
-
-		err = builtinSigner.Verify(in, signature, publicKey)
-		assert.NoError(t, err, "verify")
-	})
+type KMSStub struct {
+	Err       error
+	PublicKey []byte
 }
 
-func newClient(t *testing.T, ctx context.Context) Client {
+func (k KMSStub) GetPublicKey(context.Context, *kms.GetPublicKeyInput, ...func(*kms.Options)) (*kms.GetPublicKeyOutput, error) {
+	return &kms.GetPublicKeyOutput{PublicKey: k.PublicKey}, k.Err
+}
+
+func (k KMSStub) Sign(context.Context, *kms.SignInput, ...func(*kms.Options)) (*kms.SignOutput, error) {
+	// The message is already hashed, so we cannot produce a valid signature here.
+	return &kms.SignOutput{Signature: []byte("invalid")}, k.Err
+}
+
+func encodedRSAPublicKey(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err, "generating RSA key")
+	return encode(t, &key.PublicKey)
+}
+
+func encode(t *testing.T, publicKey any) []byte {
+	t.Helper()
+	encoded, err := x509.MarshalPKIXPublicKey(publicKey)
+	require.NoError(t, err, "encoding public key")
+	return encoded
+}
+
+func encodedED25519PublicKey(t *testing.T) []byte {
+	t.Helper()
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err, "generating ed25519 key")
+	return encode(t, publicKey)
+}
+
+func newKMSClient(t *testing.T, ctx context.Context) Client {
 	t.Helper()
 
 	cfg, err := config.LoadDefaultConfig(ctx,

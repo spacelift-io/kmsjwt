@@ -5,105 +5,100 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
-	"sync"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/pkg/errors"
 )
 
-var signingMethod = jwt.SigningMethodRS512
+var (
+	signingMethod = jwt.SigningMethodPS512
+	_             = jwt.SigningMethod(KMSJWT{})
+)
 
-// KMSJWT is a JWT signing method implementation using RSA512 with the private
-// key stored in AWS KMS. The public key is retrieved from KMS on
-// initialization.
+// KMSJWT is a JWT signing method implementation using an asymmetric AWS KMS key.
+// The signing is done by KMS service, so there is a network call on every sign action.
+// The verification is done on the client side with the exported public key.
+// The public key is retrieved from KMS on initialization.
 type KMSJWT struct {
-	api   KMS
-	keyID string
-
-	lock      sync.Mutex
+	client    KMS
+	keyID     string
 	publicKey *rsa.PublicKey
 }
 
-// New provides a KMS-based implementation of JWT signing method.
-func New(api KMS, keyID string) *KMSJWT {
-	return &KMSJWT{api: api, keyID: keyID}
+// New retrieves the public key from KMS and returns a signer.
+func New(ctx context.Context, client KMS, keyID string) (KMSJWT, error) {
+	publicKey, err := getPublicKey(ctx, client, keyID)
+	if err != nil {
+		return KMSJWT{}, fmt.Errorf("kmsjwt new: %w", err)
+	}
+	return KMSJWT{client: client, keyID: keyID, publicKey: publicKey}, err
 }
 
-// NewWithPublicKey provides a KMS-based implementation of JWT signing method
-// with a pre-loaded public key.
-func NewWithPublicKey(api KMS, keyID string, publicKey *rsa.PublicKey) *KMSJWT {
-	return &KMSJWT{api: api, keyID: keyID, publicKey: publicKey}
+func getPublicKey(ctx context.Context, client KMS, keyID string) (*rsa.PublicKey, error) {
+	response, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &keyID})
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve public key: %w", err)
+	}
+
+	publicKey, err := x509.ParsePKIXPublicKey(response.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse public key: %w", err)
+	}
+
+	result, ok := publicKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("public key: cannot assert %T as %T", publicKey, result)
+	}
+
+	return result, nil
 }
 
-func (k *KMSJWT) Alg() string {
+// Alg returns the signing algorithm as defined in https://datatracker.ietf.org/doc/html/rfc7518#section-3.1.
+func (k KMSJWT) Alg() string {
 	return signingMethod.Alg()
 }
 
-func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
+// Sign signs the signingString with AWS KMS using the key ID stored on the object.
+// The key parameter expects a context.Context that is used for the network call to KMS.
+func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
 	if !ok {
-		return "", jwt.ErrInvalidKeyType
+		return "", fmt.Errorf("kmsjwt sign: %w", jwt.ErrInvalidKeyType)
 	}
 
 	hash := signingMethod.Hash.New()
-	hash.Write([]byte(signingString))
+	_, err := hash.Write([]byte(signingString))
+	if err != nil {
+		return "", fmt.Errorf("kmsjwt writing hash: %w", err)
+	}
 
-	out, err := k.api.Sign(ctx, &kms.SignInput{
+	out, err := k.client.Sign(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.keyID),
 		Message:          hash.Sum(nil),
 		MessageType:      types.MessageTypeDigest,
-		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha512,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPssSha512,
 	})
-
-	if err != nil && errors.Is(err, context.Canceled) {
-		return "", err
-	} else if err != nil {
-		return "", jwt.ErrInvalidKey
+	if err != nil {
+		return "", fmt.Errorf("kmsjwt signing with KMS: %w", err)
 	}
 
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
 }
 
-func (k *KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
-	ctx, ok := key.(context.Context)
+// Verify verifies that the signature is valid for the signingString.
+// The verification is done on the client side using the rsa.PublicKey stored on the object.
+// For the key parameter a context.Context is expected.
+func (k KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
+	// We don't use context, but let's keep it so:
+	// - The interface remains symmetric with Sign.
+	// - It can be reintroduced later if needed without breaking the interface.
+	_, ok := key.(context.Context)
 	if !ok {
-		return jwt.ErrInvalidKeyType
+		return fmt.Errorf("kmsjwt verify: %w", jwt.ErrInvalidKeyType)
 	}
 
-	publicKey, err := k.getPublicKey(ctx)
-	if err != nil {
-		return err
-	}
-
-	return signingMethod.Verify(signingString, stringSignature, publicKey)
-}
-
-func (k *KMSJWT) getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
-	k.lock.Lock()
-	defer k.lock.Unlock()
-
-	if k.publicKey != nil {
-		return k.publicKey, nil
-	}
-
-	response, err := k.api.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: aws.String(k.keyID)})
-	if err != nil {
-		return nil, errors.Wrap(err, "could not retrieve public key")
-	}
-
-	publicKey, err := x509.ParsePKIXPublicKey(response.PublicKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not parse public key")
-	}
-
-	var ok bool
-	k.publicKey, ok = publicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, errors.Errorf("public key type assertion: cannot assert %T as %T", publicKey, k.publicKey)
-	}
-
-	return k.publicKey, nil
+	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
 }
