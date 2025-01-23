@@ -70,7 +70,10 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	}
 
 	hash := signingMethod.Hash.New()
-	_, _ = hash.Write([]byte(signingString))
+	_, err := hash.Write([]byte(signingString))
+	if err != nil {
+		return "", fmt.Errorf("kmsjwt writing hash: %w", err)
+	}
 
 	out, err := k.client.Sign(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.keyID),
