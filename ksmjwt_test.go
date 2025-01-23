@@ -17,25 +17,15 @@ import (
 	"github.com/spacelift-io/kmsjwt/v7"
 )
 
-func TestSignAndVerifyWithLocalStack(t *testing.T) {
+func TestWithLocalStack(t *testing.T) {
 	const in = "sign me, please"
 	ctx := context.Background()
 	client := newClient(t, ctx)
 	keyID := client.CreateKey(t, ctx)
-	publicKey := client.GetPublicKey(t, ctx, keyID)
 
-	t.Run("new", func(t *testing.T) {
-		signer := kmsjwt.New(client.KMS, keyID)
-
-		signature, err := signer.Sign(in, ctx)
-		require.NoError(t, err, "sign")
-
-		err = signer.Verify(in, signature, ctx)
-		assert.NoError(t, err, "verify")
-	})
-
-	t.Run("new with public key", func(t *testing.T) {
-		signer := kmsjwt.NewWithPublicKey(client.KMS, keyID, publicKey)
+	t.Run("sign and verify", func(t *testing.T) {
+		signer, err := kmsjwt.New(ctx, client.KMS, keyID)
+		require.NoError(t, err, "new")
 
 		signature, err := signer.Sign(in, ctx)
 		require.NoError(t, err, "sign")
@@ -45,7 +35,8 @@ func TestSignAndVerifyWithLocalStack(t *testing.T) {
 	})
 
 	t.Run("RFC compliance", func(t *testing.T) {
-		signer := kmsjwt.New(client.KMS, keyID)
+		signer, err := kmsjwt.New(ctx, client.KMS, keyID)
+		require.NoError(t, err, "new")
 
 		signature, err := signer.Sign(in, ctx)
 		require.NoError(t, err, "sign")
@@ -53,6 +44,7 @@ func TestSignAndVerifyWithLocalStack(t *testing.T) {
 		builtinSigner := jwt.GetSigningMethod(signer.Alg())
 		require.NotNil(t, builtinSigner, "unknown algorithm")
 
+		publicKey := client.GetPublicKey(t, ctx, keyID)
 		err = builtinSigner.Verify(in, signature, publicKey)
 		assert.NoError(t, err, "verify")
 	})
@@ -103,6 +95,6 @@ func (c Client) GetPublicKey(t *testing.T, ctx context.Context, id string) *rsa.
 func TestAlg(t *testing.T) {
 	// Valid values: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
 	const want = "RS512"
-	signer := kmsjwt.New(nil, "")
-	assert.Equal(t, want, signer.Alg(), "algorithm changed, that's MAJOR change")
+	got := kmsjwt.KMSJWT{}.Alg()
+	assert.Equal(t, want, got, "algorithm changed, that's MAJOR change")
 }
