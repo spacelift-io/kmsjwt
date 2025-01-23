@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	signingMethod = jwt.SigningMethodRS512
+	signingMethod = jwt.SigningMethodPS512
 	_             = jwt.SigningMethod(KMSJWT{})
 )
 
@@ -73,7 +73,7 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 		KeyId:            aws.String(k.keyID),
 		Message:          hash.Sum(nil),
 		MessageType:      types.MessageTypeDigest,
-		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha512,
+		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPssSha512,
 	})
 
 	if errors.Is(err, context.Canceled) {

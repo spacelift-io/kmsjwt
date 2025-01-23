@@ -94,7 +94,7 @@ func (c Client) GetPublicKey(t *testing.T, ctx context.Context, id string) *rsa.
 
 func TestAlg(t *testing.T) {
 	// Valid values: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
-	const want = "RS512"
+	const want = "PS512"
 	got := kmsjwt.KMSJWT{}.Alg()
 	assert.Equal(t, want, got, "algorithm changed, that's MAJOR change")
 }
