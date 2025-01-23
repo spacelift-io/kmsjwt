@@ -2,17 +2,9 @@ package kmsjwt_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"errors"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/kms"
-	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +15,7 @@ import (
 func TestWithLocalStack(t *testing.T) {
 	const in = "sign me, please"
 	ctx := context.Background()
-	client := newClient(t, ctx)
+	client := newKMSClient(t, ctx)
 	keyID := client.CreateKey(t, ctx)
 
 	t.Run("sign and verify", func(t *testing.T) {
@@ -51,48 +43,6 @@ func TestWithLocalStack(t *testing.T) {
 		err = builtinSigner.Verify(in, signature, publicKey)
 		assert.NoError(t, err, "verify")
 	})
-}
-
-func newClient(t *testing.T, ctx context.Context) Client {
-	t.Helper()
-
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion("eu-west-1"),
-		config.WithBaseEndpoint("http://localhost:4566"),
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider("dummy", "dummy", "dummy"),
-		),
-	)
-	require.NoError(t, err, "load AWS config")
-
-	return Client{KMS: kms.NewFromConfig(cfg)}
-}
-
-type Client struct {
-	KMS *kms.Client
-}
-
-func (c Client) CreateKey(t *testing.T, ctx context.Context) (id string) {
-	t.Helper()
-	result, err := c.KMS.CreateKey(ctx, &kms.CreateKeyInput{
-		KeySpec:  types.KeySpecRsa4096,
-		KeyUsage: types.KeyUsageTypeSignVerify,
-	})
-	require.NoError(t, err, "creating KMS key")
-	return *result.KeyMetadata.KeyId
-}
-
-func (c Client) GetPublicKey(t *testing.T, ctx context.Context, id string) *rsa.PublicKey {
-	t.Helper()
-	response, err := c.KMS.GetPublicKey(ctx, &kms.GetPublicKeyInput{
-		KeyId: &id,
-	})
-	require.NoError(t, err, "get KMS public key")
-
-	key, err := x509.ParsePKIXPublicKey(response.PublicKey)
-	require.NoError(t, err, "parsing fetched pubic key")
-
-	return key.(*rsa.PublicKey)
 }
 
 func TestNew(t *testing.T) {
@@ -135,27 +85,6 @@ func newSignerAndStub(t *testing.T) (kmsjwt.KMSJWT, *KMSStub) {
 	signer, err := kmsjwt.New(ctx, stub, keyID)
 	require.NoError(t, err, "creating signer")
 	return signer, stub
-}
-
-func encodedRSAPublicKey(t *testing.T) []byte {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err, "generating RSA key")
-	return encode(t, &key.PublicKey)
-}
-
-func encode(t *testing.T, publicKey any) []byte {
-	t.Helper()
-	encoded, err := x509.MarshalPKIXPublicKey(publicKey)
-	require.NoError(t, err, "encoding public key")
-	return encoded
-}
-
-func encodedED25519PublicKey(t *testing.T) []byte {
-	t.Helper()
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err, "generating ed25519 key")
-	return encode(t, publicKey)
 }
 
 func TestKMSJWT_Alg(t *testing.T) {
