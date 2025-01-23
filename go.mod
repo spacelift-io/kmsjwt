@@ -8,7 +8,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/aws/aws-sdk-go-v2/service/kms v1.37.13
 	github.com/golang-jwt/jwt/v4 v4.5.1
-	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.10.0
 )
 

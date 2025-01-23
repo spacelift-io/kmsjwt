@@ -5,12 +5,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -37,17 +37,17 @@ func New(ctx context.Context, client KMS, keyID string) (*KMSJWT, error) {
 func getPublicKey(ctx context.Context, client KMS, keyID string) (*rsa.PublicKey, error) {
 	response, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &keyID})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not retrieve public key")
+		return nil, fmt.Errorf("could not retrieve public key: %w", err)
 	}
 
 	publicKey, err := x509.ParsePKIXPublicKey(response.PublicKey)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not parse public key")
+		return nil, fmt.Errorf("could not parse public key: %w", err)
 	}
 
 	result, ok := publicKey.(*rsa.PublicKey)
 	if !ok {
-		return nil, errors.Errorf("public key type assertion: cannot assert %T as %T", publicKey, result)
+		return nil, fmt.Errorf("public key: cannot assert %T as %T", publicKey, result)
 	}
 
 	return result, nil
@@ -63,11 +63,11 @@ func (k KMSJWT) Alg() string {
 func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
 	if !ok {
-		return "", jwt.ErrInvalidKeyType
+		return "", fmt.Errorf("sign: %w", jwt.ErrInvalidKeyType)
 	}
 
 	hash := signingMethod.Hash.New()
-	hash.Write([]byte(signingString))
+	_, _ = hash.Write([]byte(signingString))
 
 	out, err := k.client.Sign(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.keyID),
@@ -75,11 +75,8 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 		MessageType:      types.MessageTypeDigest,
 		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPssSha512,
 	})
-
-	if errors.Is(err, context.Canceled) {
-		return "", err
-	} else if err != nil {
-		return "", errors.Wrap(err, "signing with KMS")
+	if err != nil {
+		return "", fmt.Errorf("signing with KMS: %w", err)
 	}
 
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
@@ -94,7 +91,7 @@ func (k KMSJWT) Verify(signingString, stringSignature string, key interface{}) e
 	// - It can be reintroduced later if needed without breaking the interface.
 	_, ok := key.(context.Context)
 	if !ok {
-		return jwt.ErrInvalidKeyType
+		return fmt.Errorf("verify: %w", jwt.ErrInvalidKeyType)
 	}
 
 	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
