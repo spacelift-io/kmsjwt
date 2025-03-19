@@ -18,10 +18,11 @@ var (
 	_             = jwt.SigningMethod(KMSJWT{})
 )
 
-// KMSJWT is a JWT signing method implementation using an asymmetric AWS KMS key.
-// The signing is done by KMS service, so there is a network call on every sign action.
-// The verification is done on the client side with the exported public key.
-// The public key is retrieved from KMS on initialization.
+// KMSJWT implements jwt.SigningMethod using an asymmetric AWS KMS key.
+// Signing is performed by the KMS service, requiring a network call for each signing operation.
+// Verification is handled on the client side, using the public key, which is retrieved from KMS during initialization.
+// If the library is registered with jwt.RegisterSigningMethod, it overrides the built-in method.
+// This override is not an issue, as the library behaves like the built-in method unless the key type is context.Context.
 type KMSJWT struct {
 	client    KMS
 	keyID     string
@@ -61,14 +62,18 @@ func (k KMSJWT) Alg() string {
 	return signingMethod.Alg()
 }
 
-// Sign signs the signingString with AWS KMS using the key ID stored on the object.
-// The key parameter expects a context.Context that is used for the network call to KMS.
+// Sign signs the signingString using AWS KMS with the key ID stored in the object.
+// The key parameter expected to be a context.Context, that is used for the network call to KMS.
+// If the key is not of type context.Context, the method falls back to the algorithm provided by jwt.
 func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
-	if !ok {
-		return "", fmt.Errorf("kmsjwt sign: %w", jwt.ErrInvalidKeyType)
+	if ok {
+		return k.signWithKMS(ctx, signingString)
 	}
+	return signingMethod.Sign(signingString, key)
+}
 
+func (k KMSJWT) signWithKMS(ctx context.Context, signingString string) (string, error) {
 	hash := signingMethod.Hash.New()
 	_, err := hash.Write([]byte(signingString))
 	if err != nil {
@@ -88,17 +93,15 @@ func (k KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(out.Signature), nil
 }
 
-// Verify verifies that the signature is valid for the signingString.
-// The verification is done on the client side using the rsa.PublicKey stored on the object.
-// For the key parameter a context.Context is expected.
+// Verify checks whether the signature is valid for the given signingString.
+// Verification is performed on the client side.
+// If the key is of type context.Context, the key stored in the struct is used for verification.
+// Otherwise, the provided key is used.
 func (k KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
-	// We don't use context, but let's keep it so:
-	// - The interface remains symmetric with Sign.
-	// - It can be reintroduced later if needed without breaking the interface.
+	// We use context, so the interface remains symmetric with Sign.
 	_, ok := key.(context.Context)
-	if !ok {
-		return fmt.Errorf("kmsjwt verify: %w", jwt.ErrInvalidKeyType)
+	if ok {
+		key = k.publicKey
 	}
-
-	return signingMethod.Verify(signingString, stringSignature, k.publicKey)
+	return signingMethod.Verify(signingString, stringSignature, key)
 }

@@ -2,7 +2,10 @@ package kmsjwt_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -119,8 +122,27 @@ func TestKMSJWT_Verify(t *testing.T) {
 
 	t.Run("invalid key type", func(t *testing.T) {
 		signer, _ := newSignerAndStub(t)
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		require.NoError(t, err, "generating key")
+		signature, err := signer.Sign(signMe, key)
+		require.NoError(t, err, "signing")
 
-		err := signer.Verify(signMe, "invalid signature", "foo")
-		assert.ErrorIs(t, err, jwt.ErrInvalidKeyType)
+		err = signer.Verify(signMe, signature, "foo")
+		assert.ErrorIs(t, err, jwt.ErrInvalidKey)
 	})
+}
+
+func TestKMSJWT_BuiltinFallback(t *testing.T) {
+	const signMe = "sign me, please"
+
+	signer, _ := newSignerAndStub(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err, "generating key")
+
+	signature, err := signer.Sign(signMe, key)
+	fmt.Println(signature)
+	require.NoError(t, err, "signing")
+
+	err = signer.Verify(signMe, signature, &key.PublicKey)
+	require.NoError(t, err, "verifying")
 }
